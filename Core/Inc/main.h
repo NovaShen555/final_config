@@ -65,10 +65,6 @@ void Error_Handler(void);
 #define EC1_GPIO_Port GPIOA
 #define EB2_Pin GPIO_PIN_11
 #define EB2_GPIO_Port GPIOE
-#define ED1_Pin GPIO_PIN_12
-#define ED1_GPIO_Port GPIOD
-#define ED2_Pin GPIO_PIN_13
-#define ED2_GPIO_Port GPIOD
 #define PWMA_Pin GPIO_PIN_6
 #define PWMA_GPIO_Port GPIOC
 #define PWMB_Pin GPIO_PIN_7
@@ -101,8 +97,9 @@ typedef struct speed_data{
   float delta_pulses;
   float delta_distance;
 } Speed_Data;
-extern char imu_rx_buffer[4096]__attribute__((section(".out")));
-extern char speed_rx_buffer[4096]__attribute__((section(".out")));
+extern char imu_rx_buffer[2048]__attribute__((section(".out")));
+extern char speed_rx_buffer[2048]__attribute__((section(".out")));
+extern char screen_rx_buffer[2048]__attribute__((section(".out")));
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

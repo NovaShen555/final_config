@@ -320,6 +320,8 @@ void USART3_IRQHandler(void)
   HAL_UART_IRQHandler(&huart3);
   /* USER CODE BEGIN USART3_IRQn 1 */
 
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart3, screen_rx_buffer, 2048);
+
   /* USER CODE END USART3_IRQn 1 */
 }
 

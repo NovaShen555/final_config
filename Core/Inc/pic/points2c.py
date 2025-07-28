@@ -14,6 +14,7 @@ def main():
         sys.exit(1)
 
     lines = pathlib.Path(sys.argv[1]).read_text().splitlines()
+    name = sys.argv[2]
     points = []
     for ln in lines:
         ln = ln.strip()
@@ -23,7 +24,9 @@ def main():
         points.append((x, y))
 
     print('// 由 points2c.py 自动生成，共 %d 个点' % len(points))
-    print('float points[%d][2] = {' % len(points))
+    print(f"const int {name}_size = {len(points)};")
+    k = '{'
+    print(f"const float {name}_points[{len(points)}][2] = {k}")
     for x, y in points:
         print('    { %.6ff, %.6ff },' % (x, y))
     print('};')

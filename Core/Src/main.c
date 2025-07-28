@@ -40,7 +40,9 @@
 #include "motion/motion_types.h"
 #include "PTZ.h"
 #include "pic/nl.h"
+#include "pic/kk.h"
 #include "pic/wsnlwcsnl.h"
+#include "pic/hbkk.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -70,11 +72,13 @@ extern PID_LocTypeDef Motor_A_PID;
 extern PID_LocTypeDef Motor_B_PID;
 extern PID_LocTypeDef Z_PID;
 
-char speed_rx_buffer[4096]__attribute__((section(".out")));
-char imu_rx_buffer[4096]__attribute__((section(".out")));
+char speed_rx_buffer[2048]__attribute__((section(".out")));
+char imu_rx_buffer[2048]__attribute__((section(".out")));
+char screen_rx_buffer[2048]__attribute__((section(".out")));
 
-char speed_data_buffer[4096];
-char imu_data_buffer[4096];
+char speed_data_buffer[2048];
+char imu_data_buffer[2048];
+char screen_data_buffer[2048];
 
 
 const float ENCODER_RESOLUTION_AB = 500.0f * 4.0f * 30.f;
@@ -109,8 +113,15 @@ float accx,accy;
 float PTZ_angle_z = 0.0f;
 float PTZ_angle_x = 0.0f;
 
+float projection_x = 0.27f, projection_y = 0.33f;
+
 double motor_speed_x, motor_speed_y, motor_speed_z;
 bool data_flag = false;
+
+// draw
+bool draw = false;
+int draw_size = kk_size;
+float (*draw_points)[2] = kk_points;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -128,6 +139,11 @@ bool verify_imu_data(int start);
 void parse_imu_data(sensor_data_fifo_s* data, int start);
 void ImuHandler(uint16_t size);
 void CheckPosition();
+
+void ScreenHandler();
+void WriteSCREEN(char* msg);
+float GetDistance(float* point_a, float* point_b);
+void Projection_Draw(float x, float y);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -173,7 +189,6 @@ int main(void)
   MX_TIM1_Init();
   MX_TIM2_Init();
   MX_TIM3_Init();
-  MX_TIM4_Init();
   MX_TIM8_Init();
   MX_UART4_Init();
   MX_UART5_Init();
@@ -234,27 +249,49 @@ int main(void)
 
   HAL_UARTEx_ReceiveToIdle_DMA(&huart1,speed_rx_buffer,2048); //1接调试器
   // HAL_UARTEx_ReceiveToIdle_DMA(&huart2,flow_rx_buffer,2048); //2接云台
-  // HAL_UARTEx_ReceiveToIdle_DMA(&huart3,imu_rx_buffer,2048);
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart3,screen_rx_buffer,2048);//3接屏幕
   HAL_UARTEx_ReceiveToIdle_DMA(&huart4,imu_rx_buffer,2048); //4接imu
 
   // PTZ back zero
   PTZ_back_zero();
 
+  HAL_Delay(1000);
+
+  // PTZ_set_zero();
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET); // 开启激光笔
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  int size = nl_size;
-  float (*points)[2] = nl_points;
+  int cur_i = 0;
   while (1)
   {
-    for(int i = 0; i <= size; i++) {
-      PTZ_angle_z = points[i][0] / 180.0f * PI * 7.; // 转换为角度
-      PTZ_angle_x = points[i][1] / 180.0f * PI * 7.; // 转换为角度
-      PTZ_update(PTZ_angle_x, PTZ_angle_z);
-      HAL_Delay(10);
-    }
+    // for(int i = 0; i <= draw_size; i++) {
+    //   PTZ_angle_z = draw_points[i][0] / 180.0f * PI * 7.; // 转换为角度
+    //   PTZ_angle_x = draw_points[i][1] / 180.0f * PI * 7.; // 转换为角度
+    //   PTZ_update(PTZ_angle_x, PTZ_angle_z);
+    //   HAL_Delay(5);
+    // }
+    if (draw) {
+      // PTZ_angle_z = draw_points[cur_i][0] / 180.0f * PI * 7.; // 转换为角度
+      // PTZ_angle_x = draw_points[cur_i][1] / 180.0f * PI * 7.; // 转换为角度
+      // PTZ_update(PTZ_angle_x, PTZ_angle_z);
+      const float ratio = 20.0f;
+      float angle_x = draw_points[cur_i][0] / ratio;
+      float angle_z = draw_points[cur_i][1] / ratio;
+      Projection_Draw(angle_x, angle_z);
 
+      if (GetDistance(draw_points[(cur_i)%draw_size], draw_points[(cur_i-1)%draw_size]) > 0.15f) {
+        HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_RESET);
+        HAL_Delay(200);
+      } else {
+        HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET);
+      }
+
+      cur_i++;
+      cur_i %= draw_size-1;
+    }
 
     char msg[30];
 
@@ -263,7 +300,7 @@ int main(void)
     // sprintf(msg, "%d %d\r\n", (int)(Speed_Data_A.speed*100), (int)(Speed_Data_B.speed*100));
 
     HAL_UART_Transmit(&huart1, msg, strlen(msg), HAL_MAX_DELAY);
-    HAL_Delay(20);
+    HAL_Delay(4);
 
     /* USER CODE END WHILE */
 
@@ -559,6 +596,120 @@ void CheckPosition() {
 }
 
 
+// 屏幕数据处理
+void ScreenHandler() {
+  char *token[4];
+  int   argc = 0;
+
+  /* 用空格分隔 */
+  char *pch = strtok(screen_rx_buffer, " ");
+  while (pch && argc < 4) {
+    token[argc++] = pch;
+    pch = strtok(NULL, " ");
+  }
+
+  if (argc == 0)            /* 空行，继续读 */
+    return;
+
+  const char *cmd = token[0];       /* 第 0 个就是命令 */
+  if (strcmp(cmd, "move") == 0) {
+    int direction = atoi(token[1]);
+    int speed = atoi(token[2]);
+    float s = speed / 180. * PI;
+    if (direction == 0) {
+      PTZ_angle_x += s;
+      PTZ_update(PTZ_angle_x, PTZ_angle_z);
+    }
+    else if (direction == 1) {
+      PTZ_angle_z += s;
+      PTZ_update(PTZ_angle_x, PTZ_angle_z);
+    }
+    else if (direction == 2) {
+      PTZ_angle_x -= s;
+      PTZ_update(PTZ_angle_x, PTZ_angle_z);
+    }
+    else if (direction == 3) {
+      PTZ_angle_z -= s;
+      PTZ_update(PTZ_angle_x, PTZ_angle_z);
+    }else {
+      PTZ_angle_x = 0;
+      PTZ_angle_z = 0;
+      PTZ_update(PTZ_angle_x, PTZ_angle_z);
+    }
+  }
+  else if (strcmp(cmd, "cali") == 0) {
+    int point = atoi(token[1]);
+    if (point == 0) {
+      projection_x = -atanf(PTZ_angle_z);
+      projection_y = -atanf(PTZ_angle_x);
+    }
+
+    char msg[20];
+    sprintf(msg, "x0.val=%d", (int)(projection_x*10000));
+    WriteSCREEN(msg);
+    sprintf(msg, "y0.val=%d", (int)(projection_y*10000));
+    WriteSCREEN(msg);
+
+  }
+  else if (strcmp(cmd, "aim") == 0) {
+
+  }
+  else if (strcmp(cmd, "check") == 0) {
+
+  }
+  else if (strcmp(cmd, "track") == 0) {
+
+  }
+  else if (strcmp(cmd, "refresh") == 0) {
+
+  }
+  else if (strcmp(cmd, "pic") == 0) {
+    int direction = atoi(token[1]);
+    int id = atoi(token[2]);
+    if (direction == 1) {
+      id++;
+      id %= 12; // 循环选择
+    } else if (direction == 0) {
+      id--;
+      id += (id<0) ? 12 : 0; // 循环选择
+    }
+    char msg[20];
+    sprintf(msg, "id.txt=\"%d\"", id);
+    WriteSCREEN(msg);
+  }
+  else if (strcmp(cmd, "confirmpic") == 0) {
+    int id = atoi(token[1]);
+    draw = true;
+    if (id == 0) {
+      draw_size = kk_size;
+      draw_points = kk_points;
+    }
+    else if (id == 1) {
+      draw_size = nl_size;
+      draw_points = nl_points;
+    }
+    else if (id == 2) {
+      draw_size = wsnlwcsnl_size;
+      draw_points = wsnlwcsnl_points;
+    }
+    else if (id == 3) {
+      draw_size = hbkk_size;
+      draw_points = hbkk_points;
+    }
+    else {
+      draw = false;
+      return; // 无效ID
+    }
+  }
+}
+
+void WriteSCREEN(char* msg) {
+  const char end[3] = {0xff, 0xff, 0xff};
+  HAL_UART_Transmit(&huart3, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY); // 发送屏幕数据
+  HAL_UART_Transmit(&huart3, (uint8_t *)end, sizeof(end), HAL_MAX_DELAY); // 发送结束符
+}
+
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance==TIM6) {
@@ -605,13 +756,26 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
 
   }
   if (huart->Instance == USART3) {
-
+    memcpy(screen_data_buffer, screen_rx_buffer, Size);
+    ScreenHandler();
+    memset(screen_rx_buffer, 0, sizeof(screen_rx_buffer));
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart3, screen_rx_buffer, 2048);
   }
   if (huart->Instance == UART4) {
     memcpy(imu_data_buffer, imu_rx_buffer, Size);
     ImuHandler(Size);
     memset(imu_rx_buffer, 0, sizeof(imu_rx_buffer));
   }
+}
+
+float GetDistance(float* point_a, float* point_b) {
+  return sqrtf(powf(point_a[0] - point_b[0], 2) + powf(point_a[1] - point_b[1], 2));
+}
+
+void Projection_Draw(float x, float y) {
+  float angle_x = tanf(y - projection_y);
+  float angle_y = tanf(x - projection_x);
+  PTZ_update(angle_x, angle_y);
 }
 /* USER CODE END 4 */
 
