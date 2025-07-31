@@ -194,6 +194,11 @@ SECTIONS
     . = ALIGN(4);
     . = ALIGN(4);
   } >RAM
+  .o2 :
+  {
+    . = ALIGN(4);
+    . = ALIGN(4);
+  } >RAM_D2
 }
 
 

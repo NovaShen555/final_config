@@ -66,6 +66,7 @@ void PTZ_set_zero() {
     cr16(back_zero, 0, 5);
     HAL_UART_Transmit(&huart2, (uint8_t*)back_zero, sizeof(back_zero), HAL_MAX_DELAY);
     back_zero[2] = 0x02;
+    MY_Delay(30);
     cr16(back_zero, 0, 5);
     HAL_UART_Transmit(&huart2, (uint8_t*)back_zero, sizeof(back_zero), HAL_MAX_DELAY);
     back_zero[3] = 0x52;
@@ -96,12 +97,14 @@ void PTZ_move_angle(char id, float angle) {
 
 void PTZ_update(float angle_x, float angle_z) {
     PTZ_set_angle(0x01, angle_x);
-    MY_Delay(2);
+    MY_Delay(4);
     PTZ_set_angle(0x02, angle_z);
+    MY_Delay(4);
 }
 
 void PTZ_move(float angle_x, float angle_z) {
     PTZ_move_angle(0x01, angle_x);
-    MY_Delay(2);
+    MY_Delay(4);
     PTZ_move_angle(0x02, angle_z);
+    MY_Delay(4);
 }

@@ -23,7 +23,6 @@
 #include "i2c.h"
 #include "memorymap.h"
 #include "opamp.h"
-#include "spi.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
@@ -72,13 +71,15 @@ extern PID_LocTypeDef Motor_A_PID;
 extern PID_LocTypeDef Motor_B_PID;
 extern PID_LocTypeDef Z_PID;
 
-char speed_rx_buffer[2048]__attribute__((section(".out")));
-char imu_rx_buffer[2048]__attribute__((section(".out")));
-char screen_rx_buffer[2048]__attribute__((section(".out")));
+char speed_rx_buffer[512]__attribute__((section(".out")));
+char imu_rx_buffer[512]__attribute__((section(".out")));
+char screen_rx_buffer[512]__attribute__((section(".out")));
+char k230_rx_buffer[2048]__attribute__((section(".o2")));
 
-char speed_data_buffer[2048];
-char imu_data_buffer[2048];
-char screen_data_buffer[2048];
+char speed_data_buffer[512];
+char imu_data_buffer[512];
+char screen_data_buffer[512];
+char k230_data_buffer[2048];
 
 
 const float ENCODER_RESOLUTION_AB = 500.0f * 4.0f * 30.f;
@@ -122,6 +123,8 @@ bool data_flag = false;
 bool draw = false;
 int draw_size = kk_size;
 float (*draw_points)[2] = kk_points;
+
+int FuckTi_status = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -185,7 +188,6 @@ int main(void)
   MX_I2C1_Init();
   MX_I2C2_Init();
   MX_OPAMP2_Init();
-  MX_SPI1_Init();
   MX_TIM1_Init();
   MX_TIM2_Init();
   MX_TIM3_Init();
@@ -197,6 +199,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   MX_TIM6_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
 
   HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
@@ -247,10 +250,11 @@ int main(void)
 
   kalman_filter_init(&angle_z, 0.01, 0.5);
 
-  HAL_UARTEx_ReceiveToIdle_DMA(&huart1,speed_rx_buffer,2048); //1接调试器
-  // HAL_UARTEx_ReceiveToIdle_DMA(&huart2,flow_rx_buffer,2048); //2接云台
-  HAL_UARTEx_ReceiveToIdle_DMA(&huart3,screen_rx_buffer,2048);//3接屏幕
-  HAL_UARTEx_ReceiveToIdle_DMA(&huart4,imu_rx_buffer,2048); //4接imu
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart1,speed_rx_buffer,512); //1接调试器
+  // HAL_UARTEx_ReceiveToIdle_DMA(&huart2,flow_rx_buffer,512); //2接云台
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart3,screen_rx_buffer,512);//3接屏幕
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart4,imu_rx_buffer,512); //4接imu
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart7,k230_rx_buffer,512); //7接k230
 
   // PTZ back zero
   PTZ_back_zero();
@@ -258,7 +262,8 @@ int main(void)
   HAL_Delay(1000);
 
   // PTZ_set_zero();
-  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET); // 开启激光笔
+  // HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET); // 开启激光笔
+  HAL_GPIO_WritePin(GPIOA , GPIO_PIN_5, GPIO_PIN_SET); // 开启激光笔
 
   /* USER CODE END 2 */
 
@@ -273,26 +278,28 @@ int main(void)
     //   PTZ_update(PTZ_angle_x, PTZ_angle_z);
     //   HAL_Delay(5);
     // }
-    if (draw) {
-      // PTZ_angle_z = draw_points[cur_i][0] / 180.0f * PI * 7.; // 转换为角度
-      // PTZ_angle_x = draw_points[cur_i][1] / 180.0f * PI * 7.; // 转换为角度
-      // PTZ_update(PTZ_angle_x, PTZ_angle_z);
-      const float ratio = 20.0f;
-      float angle_x = draw_points[cur_i][0] / ratio;
-      float angle_z = draw_points[cur_i][1] / ratio;
-      Projection_Draw(angle_x, angle_z);
-
-      if (GetDistance(draw_points[(cur_i)%draw_size], draw_points[(cur_i-1)%draw_size]) > 0.15f) {
-        HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_RESET);
-        HAL_Delay(200);
-      } else {
-        HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET);
-      }
-
-      cur_i++;
-      cur_i %= draw_size-1;
-    }
-
+    // if (draw) {
+    //   // PTZ_angle_z = draw_points[cur_i][0] / 180.0f * PI * 7.; // 转换为角度
+    //   // PTZ_angle_x = draw_points[cur_i][1] / 180.0f * PI * 7.; // 转换为角度
+    //   // PTZ_update(PTZ_angle_x, PTZ_angle_z);
+    //   const float ratio = 20.0f;
+    //   float angle_x = draw_points[cur_i][0] / ratio;
+    //   float angle_z = draw_points[cur_i][1] / ratio;
+    //   Projection_Draw(angle_x, angle_z);
+    //
+    //   if (GetDistance(draw_points[(cur_i)%draw_size], draw_points[(cur_i-1)%draw_size]) > 0.15f) {
+    //     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+    //     HAL_Delay(200);
+    //   } else {
+    //     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+    //   }
+    //
+    //   cur_i++;
+    //   cur_i %= draw_size-1;
+    // }
+    if (Position_car.z > PI) Position_car.z -= 2*PI;
+    if (Position_car.z < PI/2. && Position_car.z > -PI/2.)
+      PTZ_update(0, Position_car.z);
     char msg[30];
 
     sprintf(msg, "%d %d %d %d\r\n", (int)(Position_car.x*100), (int)(Position_car.y*100), (int)(Position_car.z*100), (int)(z_target*100));
@@ -460,8 +467,12 @@ void Speed_Int(double dt) {
 
   if (isnan(Position_car.x)) Position_car.x = 0;
   if (isnan(Position_car.y)) Position_car.y = 0;
+  if (isnan(Speed_car.x)) Speed_car.x = 0;
+  if (isnan(Speed_car.y)) Speed_car.y = 0;
+
 
   // 积分
+  if(Position_car.z == 0)Position_car.z = 0.0001;
   Position_car.x += (Speed_car.x*cosf(Position_car.z)+Speed_car.y*sinf(Position_car.z))*dt;
   Position_car.y += (-Speed_car.x*sinf(Position_car.z)+Speed_car.y*cosf(Position_car.z))*dt;
 }
@@ -639,10 +650,12 @@ void ScreenHandler() {
   }
   else if (strcmp(cmd, "cali") == 0) {
     int point = atoi(token[1]);
-    if (point == 0) {
-      projection_x = -atanf(PTZ_angle_z);
-      projection_y = -atanf(PTZ_angle_x);
-    }
+    // if (point == 0) {
+    //   projection_x = -atanf(PTZ_angle_z);
+    //   projection_y = -atanf(PTZ_angle_x);
+    // }
+
+    PTZ_set_zero();
 
     char msg[20];
     sprintf(msg, "x0.val=%d", (int)(projection_x*10000));
@@ -701,6 +714,11 @@ void ScreenHandler() {
       return; // 无效ID
     }
   }
+  else if (strcmp(cmd, "run1") == 0) {
+    int round = atoi(token[1]);
+    FuckTi_status = 1;
+
+  }
 }
 
 void WriteSCREEN(char* msg) {
@@ -709,12 +727,146 @@ void WriteSCREEN(char* msg) {
   HAL_UART_Transmit(&huart3, (uint8_t *)end, sizeof(end), HAL_MAX_DELAY); // 发送结束符
 }
 
+void K230Handler() {
+  char *token[4];
+  int   argc = 0;
+
+  /* 用空格分隔 */
+  char *pch = strtok(k230_data_buffer, " ");
+  while (pch && argc < 4) {
+    token[argc++] = pch;
+    pch = strtok(NULL, " ");
+  }
+
+  if (argc == 0)            /* 空行，继续读 */
+    return;
+
+  const char *cmd = token[0];       /* 第 0 个就是命令 */
+  if (strcmp(cmd, "dif") == 0) {
+    int dz = atoi(token[1]);
+    int dx = atoi(token[2]);
+    dx = 0;
+    // dz *= -1;
+    // PTZ_angle_z += dz / 10000.0f;
+    // PTZ_angle_x += dx / 10000.0f;
+    // if (PTZ_angle_z > PI) PTZ_angle_z = PI;
+    // if (PTZ_angle_z < -PI) PTZ_angle_z = -PI;
+    // if (PTZ_angle_x > PI) PTZ_angle_x = PI;
+    // if (PTZ_angle_x < -PI) PTZ_angle_x = -PI;
+    // PTZ_update(PTZ_angle_x, PTZ_angle_z);
+
+    PTZ_move(dx/27000.f, dz/27000.f);
+
+  }
+
+}
+
+
+int status = 0;
+bool turning = false;
+const int fuck_speed = -300;
+const int fuck_turn = 15;
+void Fuck_NUEDC() {
+  if (status == 0 ) {//上
+    motor_speed_x = 0;
+    motor_speed_y = 0;
+    motor_speed_z = 0;
+    turning = false;
+    z_target = 0;
+    if (Position_car.y < -95) {
+      status++;
+      return;
+    }
+    motor_speed_x = fuck_speed;
+  }
+  else if (status == 1) {//1转
+    motor_speed_x = 0;
+    motor_speed_y = 0;
+    motor_speed_z = 0;
+    turning = true;
+    if (Position_car.z > PI/2. - 0.1) {
+      status++;
+      return;
+    }
+    motor_speed_z = fuck_turn;
+  }
+  else if (status == 2) {//左
+    motor_speed_x = 0;
+    motor_speed_y = 0;
+    motor_speed_z = 0;
+    turning = false;
+    z_target = PI/2.;
+    if (Position_car.x < -95) {
+      status++;
+      return;
+    }
+    motor_speed_x = fuck_speed;
+  }
+  else if (status == 3) {//2转
+    motor_speed_x = 0;
+    motor_speed_y = 0;
+    motor_speed_z = 0;
+    turning = true;
+    if ((Position_car.z > -PI && Position_car.z < 0) || Position_car.z > PI - 0.15) {
+      status++;
+      return;
+    }
+    motor_speed_z = fuck_turn;
+  }
+  else if (status == 4) {//下
+    motor_speed_x = 0;
+    motor_speed_y = 0;
+    motor_speed_z = 0;
+    turning = false;
+    z_target = -PI;
+    if (Position_car.y > -5) {
+      status++;
+      return;
+    }
+    motor_speed_x = fuck_speed;
+  }
+  else if (status == 5) {//3转
+    motor_speed_x = 0;
+    motor_speed_y = 0;
+    motor_speed_z = 0;
+    turning = true;
+    if (Position_car.z > -PI/2. - 0.1 && Position_car.z < 0) {
+      status++;
+      return;
+    }
+    motor_speed_z = fuck_turn;
+  }
+  else if (status == 6) {
+    motor_speed_x = 0;
+    motor_speed_y = 0;
+    motor_speed_z = 0;
+    turning = false;
+    z_target = -PI/2.;
+    if (Position_car.x > -5) {
+      status++;
+      return;
+    }
+    motor_speed_x = fuck_speed;
+  }
+  else if (status == 7) {
+    motor_speed_x = 0;
+    motor_speed_y = 0;
+    motor_speed_z = 0;
+    turning = true;
+    if (Position_car.z > -0.1) {
+      status = 0;
+      return;
+    }
+    motor_speed_z = fuck_turn;
+  }
+}
+
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance==TIM6) {
 
-    if (data_flag) SpeedHandler(),data_flag = false;
+    // if (data_flag) SpeedHandler(),data_flag = false;
     // if (data_flag) PositionHandler(),data_flag = false;
     // CheckPosition();
 
@@ -727,21 +879,25 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 
     Speed_PID();
+    Fuck_NUEDC();
 
-    if (Position_car.z - z_target > PI) Position_car.z -= 2.0f * PI;
-    if (Position_car.z - z_target < -PI) Position_car.z += 2.0f * PI;
 
-    if (fabs(Position_car.z - z_target) > 0.02) {
-      PID_output(z_target, Position_car.z, &Z_PID, 2000);
-      motor_speed_z = Z_PID.output;
+    if (turning == false) {
+      if (Position_car.z - z_target > PI) Position_car.z -= 2.0f * PI;
+      if (Position_car.z - z_target < -PI) Position_car.z += 2.0f * PI;
+
+      if (fabs(Position_car.z - z_target) > 0.02) {
+        PID_output(z_target, Position_car.z, &Z_PID, 2000);
+        motor_speed_z = Z_PID.output;
+      }
+      else {
+        motor_speed_z = 0;
+      }
+
+      if (motor_speed_z > 30)motor_speed_z = 30;
+      if (motor_speed_z < -30)motor_speed_z = -30;
     }
-    else {
-      motor_speed_z = 0;
-    }
-
-    if (motor_speed_z > 30)motor_speed_z = 30;
-    if (motor_speed_z < -30)motor_speed_z = -30;
-    Move_Transform(motor_speed_x, motor_speed_y, motor_speed_z);
+    Move_Transform(motor_speed_x, motor_speed_x, motor_speed_z);
   }
 }
 
@@ -759,12 +915,32 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
     memcpy(screen_data_buffer, screen_rx_buffer, Size);
     ScreenHandler();
     memset(screen_rx_buffer, 0, sizeof(screen_rx_buffer));
-    HAL_UARTEx_ReceiveToIdle_DMA(&huart3, screen_rx_buffer, 2048);
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart3, screen_rx_buffer, 512);
   }
   if (huart->Instance == UART4) {
     memcpy(imu_data_buffer, imu_rx_buffer, Size);
     ImuHandler(Size);
     memset(imu_rx_buffer, 0, sizeof(imu_rx_buffer));
+  }
+  if (huart->Instance == UART7) {
+    HAL_UART_DMAStop(&huart7);          // 1. 关 DMA
+    __HAL_UART_DISABLE_IT(&huart7, UART_IT_IDLE);  // 2. 关 IDLE 中断
+    huart7.RxState = HAL_UART_STATE_READY;  // 3. 清 HAL 内部标志
+    /* 清 RX FIFO：连续读 DR，直到 RXNE=0 */
+    while (__HAL_UART_GET_FLAG(&huart7, UART_FLAG_RXNE))
+    {
+      volatile uint8_t dummy = huart7.Instance->RDR;  // 读 DR 会清 RXNE
+      volatile uint8_t dummy2 = huart7.Instance->TDR;  // 读 DR 会清 RXNE
+      (void)dummy;  // 防止编译器优化
+      (void)dummy2;  // 防止编译器优化
+    }
+
+    memcpy(k230_data_buffer, k230_rx_buffer, Size);
+    K230Handler();
+    memset(k230_rx_buffer, 0, sizeof(k230_rx_buffer));
+    uint8_t tmp;
+    // HAL_UART_Receive(&huart7, &tmp, 1, HAL_MAX_DELAY);
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart7, k230_rx_buffer, 2048);
   }
 }
 

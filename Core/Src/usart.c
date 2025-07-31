@@ -143,7 +143,9 @@ void MX_UART7_Init(void)
   huart7.Init.OverSampling = UART_OVERSAMPLING_16;
   huart7.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
   huart7.Init.ClockPrescaler = UART_PRESCALER_DIV1;
-  huart7.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  huart7.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_RXOVERRUNDISABLE_INIT|UART_ADVFEATURE_DMADISABLEONERROR_INIT;
+  huart7.AdvancedInit.OverrunDisable = UART_ADVFEATURE_OVERRUN_DISABLE;
+  huart7.AdvancedInit.DMADisableonRxError = UART_ADVFEATURE_DMA_DISABLEONRXERROR;
   if (HAL_UART_Init(&huart7) != HAL_OK)
   {
     Error_Handler();
@@ -434,7 +436,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
 
     /* UART7 DMA Init */
     /* UART7_RX Init */
-    hdma_uart7_rx.Instance = DMA1_Stream4;
+    hdma_uart7_rx.Instance = DMA2_Stream0;
     hdma_uart7_rx.Init.Request = DMA_REQUEST_UART7_RX;
     hdma_uart7_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
     hdma_uart7_rx.Init.PeriphInc = DMA_PINC_DISABLE;
@@ -442,7 +444,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     hdma_uart7_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
     hdma_uart7_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
     hdma_uart7_rx.Init.Mode = DMA_NORMAL;
-    hdma_uart7_rx.Init.Priority = DMA_PRIORITY_LOW;
+    hdma_uart7_rx.Init.Priority = DMA_PRIORITY_VERY_HIGH;
     hdma_uart7_rx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
     if (HAL_DMA_Init(&hdma_uart7_rx) != HAL_OK)
     {

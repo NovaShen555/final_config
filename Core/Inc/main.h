@@ -97,9 +97,10 @@ typedef struct speed_data{
   float delta_pulses;
   float delta_distance;
 } Speed_Data;
-extern char imu_rx_buffer[2048]__attribute__((section(".out")));
-extern char speed_rx_buffer[2048]__attribute__((section(".out")));
-extern char screen_rx_buffer[2048]__attribute__((section(".out")));
+extern char imu_rx_buffer[512]__attribute__((section(".out")));
+extern char speed_rx_buffer[512]__attribute__((section(".out")));
+extern char screen_rx_buffer[512]__attribute__((section(".out")));
+extern char k230_rx_buffer[2048]__attribute__((section(".o2")));
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

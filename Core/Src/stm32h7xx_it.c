@@ -266,20 +266,6 @@ void DMA1_Stream3_IRQHandler(void)
 }
 
 /**
-  * @brief This function handles DMA1 stream4 global interrupt.
-  */
-void DMA1_Stream4_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMA1_Stream4_IRQn 0 */
-
-  /* USER CODE END DMA1_Stream4_IRQn 0 */
-  HAL_DMA_IRQHandler(&hdma_uart7_rx);
-  /* USER CODE BEGIN DMA1_Stream4_IRQn 1 */
-
-  /* USER CODE END DMA1_Stream4_IRQn 1 */
-}
-
-/**
   * @brief This function handles USART1 global interrupt.
   */
 void USART1_IRQHandler(void)
@@ -290,7 +276,7 @@ void USART1_IRQHandler(void)
   HAL_UART_IRQHandler(&huart1);
   /* USER CODE BEGIN USART1_IRQn 1 */
 
-  HAL_UARTEx_ReceiveToIdle_DMA(&huart1,speed_rx_buffer,2048);
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart1,speed_rx_buffer,512);
 
   /* USER CODE END USART1_IRQn 1 */
 }
@@ -320,7 +306,7 @@ void USART3_IRQHandler(void)
   HAL_UART_IRQHandler(&huart3);
   /* USER CODE BEGIN USART3_IRQn 1 */
 
-  HAL_UARTEx_ReceiveToIdle_DMA(&huart3, screen_rx_buffer, 2048);
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart3, screen_rx_buffer, 512);
 
   /* USER CODE END USART3_IRQn 1 */
 }
@@ -336,7 +322,7 @@ void UART4_IRQHandler(void)
   HAL_UART_IRQHandler(&huart4);
   /* USER CODE BEGIN UART4_IRQn 1 */
 
-  HAL_UARTEx_ReceiveToIdle_DMA(&huart4, imu_rx_buffer, 2048);
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart4, imu_rx_buffer, 512);
 
   /* USER CODE END UART4_IRQn 1 */
 }
@@ -356,6 +342,20 @@ void TIM6_DAC_IRQHandler(void)
 }
 
 /**
+  * @brief This function handles DMA2 stream0 global interrupt.
+  */
+void DMA2_Stream0_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA2_Stream0_IRQn 0 */
+
+  /* USER CODE END DMA2_Stream0_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_uart7_rx);
+  /* USER CODE BEGIN DMA2_Stream0_IRQn 1 */
+
+  /* USER CODE END DMA2_Stream0_IRQn 1 */
+}
+
+/**
   * @brief This function handles UART7 global interrupt.
   */
 void UART7_IRQHandler(void)
@@ -365,7 +365,7 @@ void UART7_IRQHandler(void)
   /* USER CODE END UART7_IRQn 0 */
   HAL_UART_IRQHandler(&huart7);
   /* USER CODE BEGIN UART7_IRQn 1 */
-
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart7, k230_rx_buffer, 2048);
   /* USER CODE END UART7_IRQn 1 */
 }
 
