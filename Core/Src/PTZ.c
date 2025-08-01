@@ -6,7 +6,7 @@
 
 #include <control.h>
 
-void MY_Delay(int ms) {
+void MY_Delay(float ms) {
     /* 1. 使能 DWT 和 CYCCNT（只需一次） */
     static uint8_t dwt_ok = 0;
     if (!dwt_ok) {
@@ -19,7 +19,7 @@ void MY_Delay(int ms) {
     /* 2. 计算目标 tick（480 MHz -> 480000 ticks/ms） */
     uint32_t ticks_per_ms = SystemCoreClock / 1000U;    /* = 480000 */
     uint32_t start = DWT->CYCCNT;
-    uint32_t delay = (uint32_t)ms * ticks_per_ms;
+    uint32_t delay = (uint32_t)(ms * ticks_per_ms);
 
     /* 3. 阻塞等待（可中断） */
     while ((DWT->CYCCNT - start) < delay) {
@@ -52,6 +52,7 @@ void cr16(char *data, int begin, int end) {
 }
 
 void PTZ_back_zero() {
+    back_zero[3] = 0x52;
     back_zero[2] = 0x01;
     cr16(back_zero, 0, 5);
     HAL_UART_Transmit(&huart2, (uint8_t*)back_zero, sizeof(back_zero), HAL_MAX_DELAY);
@@ -86,7 +87,8 @@ void PTZ_set_angle(char id, float angle) {
 
 
 void PTZ_move_angle(char id, float angle) {
-    angle_move[1] = id - 1;
+    // angle_move[1] = id - 1;
+    angle_move[1] = 0x00;
     angle_move[2] = id;
     int16_t pulse = angle / PI * 8192;
     angle_move[5] = (pulse & 0xFF); // 低字节
@@ -99,12 +101,50 @@ void PTZ_update(float angle_x, float angle_z) {
     PTZ_set_angle(0x01, angle_x);
     MY_Delay(4);
     PTZ_set_angle(0x02, angle_z);
-    MY_Delay(4);
+    // MY_Delay(4);
 }
 
 void PTZ_move(float angle_x, float angle_z) {
     PTZ_move_angle(0x01, angle_x);
-    MY_Delay(4);
+    MY_Delay(3);
     PTZ_move_angle(0x02, angle_z);
-    MY_Delay(4);
+    // MY_Delay(0);
+}
+
+char soft[] = {0x3e, 0x00, 0x01, 0x50, 0x00, 0x00, 0x00};
+//                          id               cr16
+void PTZ_soft() {
+    soft[2] = 0x01;
+    cr16(soft, 0, 5);
+    HAL_UART_Transmit(&huart2, (uint8_t*)soft, sizeof(soft), HAL_MAX_DELAY);
+    MY_Delay(10);
+    soft[2] = 0x02;
+    cr16(soft, 0, 5);
+    HAL_UART_Transmit(&huart2, (uint8_t*)soft, sizeof(soft), HAL_MAX_DELAY);
+}
+
+char heartbeat[] = {0x3e, 0x00, 0x01, 0x0a, 0x00, 0x00, 0x00};
+int PTZ_heartbeat() {
+    cr16(heartbeat, 0, 5);
+    HAL_UART_Transmit(&huart2, (uint8_t*)heartbeat, sizeof(heartbeat), HAL_MAX_DELAY);
+    uint8_t rx_byte[] = {0xff, 0xff};
+
+    HAL_UART_Receive(&huart2, rx_byte, 2, 15);
+
+    if(rx_byte[0] != 0xff || rx_byte[1] != 0xff) return 1;
+
+    return 0;
+}
+
+char getangle[] = {0x3e, 0x00, 0x01, 0x2f, 0x00, 0x00, 0x00};
+float PTZ_getangle(int id) {
+    getangle[2] = id;
+    cr16(heartbeat, 0, 5);
+    HAL_UART_Transmit(&huart2, (uint8_t*)heartbeat, sizeof(heartbeat), HAL_MAX_DELAY);
+    uint8_t rx_byte[15];
+
+    HAL_UART_Receive(&huart2, rx_byte, 15, 10);
+
+    uint16_t data = rx_byte[6] <<8 | rx_byte[5];
+    return data * 360 / 16384;
 }

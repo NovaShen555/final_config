@@ -99,6 +99,7 @@ float w ;
 Speed Speed_car, Position_car, Imu_Speed;
 
 KalmanFilter speed_x, speed_y, angle_z;
+KalmanFilter k_gyro_z;
 float other_speed_data_x, other_speed_data_y;
 
 float Motor_A_Set,Motor_B_Set;
@@ -264,6 +265,7 @@ int main(void)
   kalman_filter_init(&speed_y, 0.01, 0.2);
 
   kalman_filter_init(&angle_z, 0.01, 0.5);
+  kalman_filter_init(&k_gyro_z, 0.01, 0.5);
 
   HAL_UARTEx_ReceiveToIdle_DMA(&huart1,speed_rx_buffer,512); //1接调试器
   // HAL_UARTEx_ReceiveToIdle_DMA(&huart2,flow_rx_buffer,512); //2接云台
@@ -318,14 +320,10 @@ int main(void)
     char msg[30];
 
     // sprintf(msg, "%d %d %d %d\r\n", (int)(Position_car.x*100), (int)(Position_car.y*100), (int)(Position_car.z*100), (int)(z_target*100));
-    if (turn2 == true)
-      sprintf(msg, "turn \r\n");
-    else
-      sprintf(msg, "not turn \r\n");
 
     // sprintf(msg, "%d %d\r\n", (int)(Speed_Data_A.speed*100), (int)(Speed_Data_B.speed*100));
 
-    HAL_UART_Transmit(&huart1, msg, strlen(msg), HAL_MAX_DELAY);
+    // HAL_UART_Transmit(&huart1, msg, strlen(msg), HAL_MAX_DELAY);
     HAL_Delay(4);
 
     /* USER CODE END WHILE */
@@ -760,14 +758,11 @@ void ScreenHandler() {
   }
 }
 
-
 void WriteSCREEN(char* msg) {
   const char end[3] = {0xff, 0xff, 0xff};
   HAL_UART_Transmit(&huart3, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY); // 发送屏幕数据
   HAL_UART_Transmit(&huart3, (uint8_t *)end, sizeof(end), HAL_MAX_DELAY); // 发送结束符
 }
-
-float k230_dx = 0, k230_dy = 0;
 
 void K230Handler() {
   char *token[4];
@@ -807,7 +802,8 @@ void K230Handler() {
     }else {
       dx = -15;
     }
-    PTZ_move(dx/27000.f, dz/27000.f);
+
+    PTZ_move(dx/27000.f, dz/24000.f);
     // if (fabs(a) > 4) {
     //   PTZ_move(dx/27000.f, dz/27000.f);
     // }
@@ -844,10 +840,32 @@ void MY1_Delay(int ms) {
 int status = 0;
 bool turning = true;
 // bool turn2 = false;
-const int fuck_speed = -250;
-const int fuck_turn = 7;
-const float bias = 0.2;
+const int fuck_speed = -350;
+const int fuck_turn = 8;
+const float bias = 0.1;
 int done_round = 0;
+
+int calc_speed(int dis) {
+  if (dis < 7) {
+    return dis*(fuck_speed- (-150))/7. + (-150);
+  }
+  if (dis > 75) {
+    return (100 - dis)*(fuck_speed-(-10))/25. + (-10);
+  }
+  return fuck_speed;
+}
+
+int calc_rotation(float r_dis) {
+  float idk = PI / 2.;
+  if (r_dis < idk * 0.15f) {
+    return r_dis * (fuck_turn - 5) / (idk * 0.15f) + 5;
+  }
+  if (r_dis > idk * 0.75) {
+    return (idk * 0.95 - r_dis) * (fuck_turn - 4) / (idk * 0.2f) + 4;
+  }
+  return fuck_turn;
+}
+
 void run1() {
   motor_speed_x = 0;
   motor_speed_y = 0;
@@ -943,19 +961,22 @@ void run2() {
     z_target = 0;
     z_target = -(atan2((-Position_car.y)-92 , (-Position_car.x)-0) + PI/2.) + 2.*0.;
     if (Position_car.y < -90) {
+      PTZ_move_angle(0x02, -0.3);
       status++;
       return;
     }
-    motor_speed_x = fuck_speed;
+    motor_speed_x = calc_speed(abs(Position_car.y - 0));
+    // motor_speed_x = fuck_speed;
   }
   else if (status == 1) {//1转
     turning = true;
     turn2 = true;
-    if (Position_car.z < -PI/2. + bias + 0.2) {
+    if (Position_car.z < -PI/2. + bias) {
       status++;
+      // FuckTi_status = 2;
       return;
     }
-    motor_speed_z = -fuck_turn;
+    motor_speed_z = -calc_rotation(fabs(Position_car.z));
   }
   else if (status == 2) {//左
     turning = false;
@@ -966,16 +987,17 @@ void run2() {
       status++;
       return;
     }
-    motor_speed_x = -fuck_speed;
+    motor_speed_x = -calc_speed(abs(Position_car.x) - 0);
   }
   else if (status == 3) {//2转
     turning = true;
     turn2 = true;
-    if (Position_car.z > 0 - bias - 0.2) {
+    if (Position_car.z > 0 - bias) {
       status++;
       return;
     }
-    motor_speed_z = fuck_turn;
+    // motor_speed_z = fuck_turn;
+    motor_speed_z = calc_rotation(PI / 2. - fabs(Position_car.z));
   }
   else if (status == 4) {//下
     turning = false;
@@ -986,7 +1008,7 @@ void run2() {
       status++;
       return;
     }
-    motor_speed_x = -fuck_speed;
+    motor_speed_x = -calc_speed(95 - abs(Position_car.y));
   }
   else if (status == 5) {//3转
     turning = true;
@@ -995,7 +1017,8 @@ void run2() {
       status++;
       return;
     }
-    motor_speed_z = -fuck_turn;
+    // motor_speed_z = -fuck_turn;
+    motor_speed_z = -calc_rotation(fabs(Position_car.z));
   }
   else if (status == 6) {
     turning = false;
@@ -1006,7 +1029,7 @@ void run2() {
       status++;
       return;
     }
-    motor_speed_x = fuck_speed;
+    motor_speed_x = calc_speed(95 - abs(Position_car.x));
   }
   else if (status == 7) {
     turning = true;
@@ -1018,7 +1041,8 @@ void run2() {
       turn2 = false;
       return;
     }
-    motor_speed_z = fuck_turn;
+    // motor_speed_z = fuck_turn;
+    motor_speed_z = calc_rotation(PI / 2. - fabs(Position_car.z));
   }
 }
 
@@ -1068,12 +1092,25 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       if (motor_speed_z < -30)motor_speed_z = -30;
     }
 
+    float gyro_z = gyro_data.z[0];
+    float dangle_z = gyro_z * 0.01 / 180. * PI * 0.32;
+
+
+    // char msg[20];
+    // sprintf(msg,"%d,%d \r\n", (int)(Speed_Data_B.speed), (int)(dangle_z*100));
+    // HAL_UART_Transmit(&huart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+
+    // dangle_z = Speed_Data_B.speed * 100;
+    float gyro_y = gyro_data.y[0];
+    float dangle_y = -gyro_y * 0.01 / 180. * PI * 0.29;
     if (turn2 == true) {
-      float gyro_z = gyro_data.z[0];
-      float dangle_z = gyro_z * 0.01 / 180. * PI * 0.3;
       // PTZ_move(0, dangle_z);
       PTZ_move_angle(0x02, dangle_z);
     }
+    // else {
+    //   // PTZ_move_angle(0x02, dangle_z * 0.6);
+    //   PTZ_move(dangle_y * 0.9, dangle_z * 0.6);
+    // }
 
     Move_Transform(motor_speed_x, motor_speed_x, motor_speed_z);
   }

@@ -23,6 +23,12 @@ PID_LocTypeDef Z_PID={
     5,
     0,0,0,0};
 
+PID_LocTypeDef PTZ_Z_PID={
+    1,
+    0.00,
+    -0.3,
+    0,0,0,0};
+
 // Created by link on 25-7-3.
 void PID_output(float set,float ture, PID_LocTypeDef *PID, float limit){
 

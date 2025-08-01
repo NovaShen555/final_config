@@ -27,4 +27,10 @@ void PTZ_update(float angle_x, float angle_z);
 
 void PTZ_move(float angle_x, float angle_z);
 
+void PTZ_soft();
+
+int PTZ_heartbeat();
+
+float PTZ_getangle(int id);
+
 #endif //PTZ_H
