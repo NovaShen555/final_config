@@ -132,6 +132,9 @@ int FuckTi_status = 0;
 int Fuck_round = 0;
 
 bool turn2 = false;
+
+float fuck_center_dif = 0;
+float fuck_radius = 0;
 /* 0是不动，云台软
  * 1是动，云台软
  * 2是不动，云台硬
@@ -643,7 +646,7 @@ void ScreenHandler() {
   if (strcmp(cmd, "move") == 0) {
     int direction = atoi(token[1]);
     int speed = atoi(token[2]);
-    float s = speed / 180. * PI;
+    float s = speed / 180. * PI * 0.2f;
     if (direction == 0) {
       // PTZ_angle_x += s;
       // PTZ_update(PTZ_angle_x, PTZ_angle_z);
@@ -669,6 +672,19 @@ void ScreenHandler() {
       PTZ_update(PTZ_angle_x, PTZ_angle_z);
       // PTZ_back_zero();
     }
+
+    MY1_Delay(5);
+    float cur_x = PTZ_getangle(0x02);
+
+    char msg[20];
+    sprintf(msg, "x0.val=%d", (int)(cur_x*100));
+    WriteSCREEN(msg);
+
+    float cur_y = PTZ_getangle(0x01);
+
+    sprintf(msg, "y0.val=%d", (int)(cur_y*100));
+    WriteSCREEN(msg);
+
   }
   else if (strcmp(cmd, "cali") == 0) {
     int point = atoi(token[1]);
@@ -745,6 +761,10 @@ void ScreenHandler() {
     Fuck_round = 1;
     FuckTi_status = 3;
   }
+  else if (strcmp(cmd, "run3") == 0) {
+    Fuck_round = 1;
+    FuckTi_status = 4;
+  }
   else if (strcmp(cmd, "soft") == 0) {
     PTZ_soft();
     FuckTi_status = 0;
@@ -765,12 +785,12 @@ void WriteSCREEN(char* msg) {
 }
 
 void K230Handler() {
-  char *token[4];
+  char *token[6];
   int   argc = 0;
 
   /* 用空格分隔 */
   char *pch = strtok(k230_data_buffer, " ");
-  while (pch && argc < 4) {
+  while (pch && argc < 6) {
     token[argc++] = pch;
     pch = strtok(NULL, " ");
   }
@@ -811,6 +831,35 @@ void K230Handler() {
     //   PTZ_move_angle(0x02, dz/27000.f);
     // }
   }
+  else if (strcmp(cmd, "cir") == 0) {
+    int center_dif_x = atoi(token[1]);
+    int radius_x = atoi(token[2]);
+    int radius_y = atoi(token[3]);
+
+    // if (!(FuckTi_status == 4))return;
+
+    float self_x = -Position_car.x; //向左是负x
+    float self_y = -Position_car.y; //向上是负y，统一转为正的
+
+    if (self_x < 10 && self_y < 80) {
+      PTZ_move_angle(0x02, (center_dif_x + radius_x*4.5) / 27000.f);
+      MY1_Delay(2);
+      PTZ_set_angle(0x01, (self_y-43) * 0.0006f);
+    }
+    if (self_y > 80 && self_x < 80) {
+      PTZ_move_angle(0x02, center_dif_x / 20000.f);
+    }
+    if (self_x > 80 && self_y > 10) {
+      PTZ_move_angle(0x02, (center_dif_x - radius_x* 6) / 27000.f);
+      MY1_Delay(2);
+      PTZ_set_angle(0x01, (self_y - 43) * 0.0006f);
+    }
+    if (self_y < 10 && self_x > 10) {
+      PTZ_move_angle(0x02, (center_dif_x) / 27000.f);
+    }
+
+
+  }
 
 }
 
@@ -840,7 +889,7 @@ void MY1_Delay(int ms) {
 int status = 0;
 bool turning = true;
 // bool turn2 = false;
-const int fuck_speed = -350;
+const int fuck_speed = -250;
 const int fuck_turn = 8;
 const float bias = 0.1;
 int done_round = 0;
@@ -858,7 +907,7 @@ int calc_speed(int dis) {
 int calc_rotation(float r_dis) {
   float idk = PI / 2.;
   if (r_dis < idk * 0.15f) {
-    return r_dis * (fuck_turn - 5) / (idk * 0.15f) + 5;
+    return r_dis * (fuck_turn - 6) / (idk * 0.15f) + 6;
   }
   if (r_dis > idk * 0.75) {
     return (idk * 0.95 - r_dis) * (fuck_turn - 4) / (idk * 0.2f) + 4;
@@ -947,6 +996,121 @@ void run1() {
     }
     motor_speed_z = fuck_turn;
   }
+}
+
+
+
+
+void new_run2() {
+  motor_speed_x = 0;
+  motor_speed_y = 0;
+  motor_speed_z = 0;
+  if (!(FuckTi_status == 1 || FuckTi_status == 3)) return;
+  if (Fuck_round <= 0)return;
+  if (status == 0) {//转
+    turning = true;
+    turn2 = true;
+    if (Position_car. z > -PI/2. - bias) {
+      status++;
+      // FuckTi_status = 2;
+      return;
+    }
+    motor_speed_z = calc_rotation(fabs(Position_car.z));
+  }
+  else if (status == 1) {//下
+    turning = false;
+    turn2 = false;
+    z_target = PI/2.;
+    z_target = -atan2((-Position_car.y) , 93 - (-Position_car.x));
+    if (Position_car.x< -90) {
+      PTZ_move_angle(0x02, -0.3);
+      status++;
+      return;
+    }
+    motor_speed_x = -calc_speed(abs(Position_car.y - 0));
+    // motor_speed_x = fuck_speed;
+  }
+  else if (status == 2) {//1转
+    turning = true;
+    turn2 = true;
+    if (Position_car.z < 0 + bias) {
+      status++;
+      return;
+    }
+    motor_speed_z = -calc_rotation(fabs(Position_car.z));
+  }
+  else if (status == 3) {//右
+    turning = false;
+    turn2 = false;
+    z_target = 0;
+
+    z_target -= atan((Position_car.x - (92)) / (Position_car.y - (93)));
+
+    if (Position_car.y > 93) {
+      status++;
+      return;
+    }
+    motor_speed_x = calc_speed(abs(Position_car.x) - 0);
+  }
+  else if (status == 4) {//2转
+    turning = true;
+    turn2 = true;
+    if (Position_car.z > PI/2. - bias) {
+      status++;
+      return;
+    }
+    // motor_speed_z = fuck_turn;
+    motor_speed_z = calc_rotation(PI / 2. - fabs(Position_car.z));
+  }
+  else if (status == 5) {//上
+    turning = false;
+    turn2 = false;
+    z_target = PI/2.;
+
+    z_target += atan( (Position_car.y - (95 + done_round * 1.4)) / (-Position_car.x));
+
+    if (Position_car.x < 5) {
+      status++;
+      return;
+    }
+    motor_speed_x = calc_speed(95 - abs(Position_car.y));
+  }
+  else if (status == 6) {//3转
+    turning = true;
+    turn2 = true;
+    if (Position_car.z < 0 + bias) {
+      status++;
+      return;
+    }
+    // motor_speed_z = -fuck_turn;
+    motor_speed_z = -calc_rotation(fabs(Position_car.z));
+  }
+  else if (status == 7) {//左
+    turning = false;
+    turn2 = false;
+    z_target = 0;
+
+    z_target -= atan((Position_car.x) / (Position_car.y));
+
+    if (Position_car.y < 6 + done_round * 1.2) {
+      status++;
+      return;
+    }
+    motor_speed_x = calc_speed(95 - abs(Position_car.x));
+  }
+  // else if (status == 8) {
+  //   turning = true;
+  //   turn2 = true;
+  //   if (Position_car.z > -bias) {
+  //     status = 0;
+  //     Fuck_round--;
+  //     done_round++;
+  //     turn2 = false;
+  //     return;
+  //   }
+  //   // motor_speed_z = fuck_turn;
+  //   motor_speed_z = calc_rotation(PI / 2. - fabs(Position_car.z));
+  // }
 }
 
 void run2() {
@@ -1046,12 +1210,113 @@ void run2() {
   }
 }
 
+void run3() {
+  motor_speed_x = 0;
+  motor_speed_y = 0;
+  motor_speed_z = 0;
+  if (!(FuckTi_status == 4)) return;
+  if (Fuck_round <= 0)return;
+  if (status == 0) {//上
+    turning = false;
+    turn2 = false;
+    z_target = 0;
+    z_target = -(atan2((-Position_car.y)-92 , (-Position_car.x)-0) + PI/2.) + 2.*0.;
+    if (Position_car.y < -90) {
+      status++;
+      return;
+    }
+    motor_speed_x = calc_speed(abs(Position_car.y - 0));
+    // motor_speed_x = fuck_speed;
+  }
+  else if (status == 1) {//1转
+    turning = true;
+    turn2 = true;
+    if (Position_car.z < -PI/2. + bias) {
+      status++;
+      return;
+    }
+    motor_speed_z = -calc_rotation(fabs(Position_car.z));
+  }
+  else if (status == 2) {//左
+    turning = false;
+    turn2 = false;
+    z_target = -PI/2.;
+    z_target -= atan((Position_car.y - (-92)) / (Position_car.x - (-93)));
+    if (Position_car.x < -93) {
+      status++;
+      // status = 0;
+      // FuckTi_status = 0;
+      return;
+    }
+    motor_speed_x = -calc_speed(abs(Position_car.x) - 0);
+  }
+  else if (status == 3) {//2转
+    turning = true;
+    turn2 = true;
+    if (Position_car.z > 0 - bias) {
+      status++;
+      return;
+    }
+    // motor_speed_z = fuck_turn;
+    motor_speed_z = calc_rotation(PI / 2. - fabs(Position_car.z));
+  }
+  else if (status == 4) {//下
+    turning = false;
+    turn2 = false;
+    z_target = 0;
+    z_target += atan( (Position_car.x - (-95 - done_round * 1.4)) / (Position_car.y - (0)));
+    if (Position_car.y > 0) {
+      status++;
+      return;
+    }
+    motor_speed_x = -calc_speed(95 - abs(Position_car.y));
+  }
+  else if (status == 5) {//3转
+    turning = true;
+    turn2 = true;
+    if (Position_car.z < -PI/2. + bias) {
+      status++;
+      return;
+    }
+    // motor_speed_z = -fuck_turn;
+    motor_speed_z = -calc_rotation(fabs(Position_car.z));
+  }
+  else if (status == 6) {
+    turning = false;
+    turn2 = false;
+    z_target = -PI/2.;
+    z_target -= atan((Position_car.y - (1.+done_round*1.7)) / (Position_car.x - (-5)));
+    if (Position_car.x > -6 - done_round * 1.2) {
+      status++;
+      return;
+    }
+    motor_speed_x = calc_speed(95 - abs(Position_car.x));
+  }
+  else if (status == 7) {
+    turning = true;
+    turn2 = true;
+    if (Position_car.z > -bias) {
+      status = 0;
+      Fuck_round--;
+      done_round++;
+      turn2 = false;
+      return;
+    }
+    // motor_speed_z = fuck_turn;
+    motor_speed_z = calc_rotation(PI / 2. - fabs(Position_car.z));
+  }
+}
+
 void Fuck_NUEDC() {
   if (FuckTi_status == 1) {
     run1();
   }
   else if (FuckTi_status == 3) {
-    run2();
+    // run2();
+    new_run2();
+  }
+  else if (FuckTi_status == 4) {
+    run3();
   }
 }
 
@@ -1093,7 +1358,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     }
 
     float gyro_z = gyro_data.z[0];
-    float dangle_z = gyro_z * 0.01 / 180. * PI * 0.32;
+    float dangle_z = gyro_z * 0.01 / 180. * PI * 0.294;
 
 
     // char msg[20];

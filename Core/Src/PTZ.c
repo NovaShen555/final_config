@@ -136,15 +136,16 @@ int PTZ_heartbeat() {
     return 0;
 }
 
-char getangle[] = {0x3e, 0x00, 0x01, 0x2f, 0x00, 0x00, 0x00};
-float PTZ_getangle(int id) {
+char getangle[] = {0x3e, 0x00, 0x01, 0x0b, 0x00, 0x00, 0x00};
+float PTZ_getangle(char id) {
     getangle[2] = id;
-    cr16(heartbeat, 0, 5);
-    HAL_UART_Transmit(&huart2, (uint8_t*)heartbeat, sizeof(heartbeat), HAL_MAX_DELAY);
-    uint8_t rx_byte[15];
+    cr16(getangle, 0, 5);
+    uint8_t rx_byte[20] = {0};
+    HAL_UART_Transmit(&huart2, (uint8_t*)getangle, sizeof(getangle), HAL_MAX_DELAY);
 
-    HAL_UART_Receive(&huart2, rx_byte, 15, 10);
+
+    HAL_UART_Receive(&huart2, rx_byte, 20, 40);
 
     uint16_t data = rx_byte[6] <<8 | rx_byte[5];
-    return data * 360 / 16384;
+    return data * 360./ 16384.;
 }

@@ -31,6 +31,6 @@ void PTZ_soft();
 
 int PTZ_heartbeat();
 
-float PTZ_getangle(int id);
+float PTZ_getangle(char id);
 
 #endif //PTZ_H
