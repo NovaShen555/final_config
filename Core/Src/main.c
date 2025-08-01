@@ -38,10 +38,10 @@
 #include "driver.h"
 #include "motion/motion_types.h"
 #include "PTZ.h"
-#include "pic/nl.h"
-#include "pic/kk.h"
-#include "pic/wsnlwcsnl.h"
-#include "pic/hbkk.h"
+// #include "pic/nl.h"
+// #include "pic/kk.h"
+// #include "pic/wsnlwcsnl.h"
+// #include "pic/hbkk.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -70,6 +70,7 @@ typedef struct {
 extern PID_LocTypeDef Motor_A_PID;
 extern PID_LocTypeDef Motor_B_PID;
 extern PID_LocTypeDef Z_PID;
+extern PID_LocTypeDef PTZ_Z_PID;
 
 char speed_rx_buffer[512]__attribute__((section(".out")));
 char imu_rx_buffer[512]__attribute__((section(".out")));
@@ -121,10 +122,21 @@ bool data_flag = false;
 
 // draw
 bool draw = false;
-int draw_size = kk_size;
-float (*draw_points)[2] = kk_points;
+int draw_size = 0;
+float (*draw_points)[2] = {0};
+
+int PTZ_alive = 0;
 
 int FuckTi_status = 0;
+int Fuck_round = 0;
+
+bool turn2 = false;
+/* 0是不动，云台软
+ * 1是动，云台软
+ * 2是不动，云台硬
+ * 3是动，云台硬
+ */
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -143,6 +155,7 @@ void parse_imu_data(sensor_data_fifo_s* data, int start);
 void ImuHandler(uint16_t size);
 void CheckPosition();
 
+void MY1_Delay(int ms);
 void ScreenHandler();
 void WriteSCREEN(char* msg);
 float GetDistance(float* point_a, float* point_b);
@@ -200,6 +213,7 @@ int main(void)
   MX_USART3_UART_Init();
   MX_TIM6_Init();
   MX_TIM4_Init();
+  MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
 
   HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
@@ -212,6 +226,7 @@ int main(void)
   HAL_TIM_PWM_Start(&htim8, TIM_CHANNEL_4);
 
   HAL_TIM_Base_Start_IT(&htim6);
+  HAL_TIM_Base_Start_IT(&htim7);
 
   //imu init
   angle_data.dt = 0.01f;
@@ -297,12 +312,16 @@ int main(void)
     //   cur_i++;
     //   cur_i %= draw_size-1;
     // }
-    if (Position_car.z > PI) Position_car.z -= 2*PI;
-    if (Position_car.z < PI/2. && Position_car.z > -PI/2.)
-      PTZ_update(0, Position_car.z);
+    // if (Position_car.z > PI) Position_car.z -= 2*PI;
+    // if (Position_car.z < PI/2. && Position_car.z > -PI/2.)
+    //   PTZ_update(0, Position_car.z);
     char msg[30];
 
-    sprintf(msg, "%d %d %d %d\r\n", (int)(Position_car.x*100), (int)(Position_car.y*100), (int)(Position_car.z*100), (int)(z_target*100));
+    // sprintf(msg, "%d %d %d %d\r\n", (int)(Position_car.x*100), (int)(Position_car.y*100), (int)(Position_car.z*100), (int)(z_target*100));
+    if (turn2 == true)
+      sprintf(msg, "turn \r\n");
+    else
+      sprintf(msg, "not turn \r\n");
 
     // sprintf(msg, "%d %d\r\n", (int)(Speed_Data_A.speed*100), (int)(Speed_Data_B.speed*100));
 
@@ -454,7 +473,7 @@ void Speed_Int(double dt) {
 
   // float tmp_angle_z = kalman_filter_update(&angle_z, angle_data.z[0] * angle_data.scale * 3.1415926535f / 180.0f);
   float tmp_angle_z = angle_data.z[0] * angle_data.scale * 3.1415926535f / 180.0f;
-  if (tmp_angle_z > 2.0f * PI) tmp_angle_z -= 2.0f * PI;
+  if (tmp_angle_z > 2*PI) tmp_angle_z -= 2.0f * PI;
   Position_car.z = tmp_angle_z; // 角度转弧度
 
   // 限制范围
@@ -496,32 +515,32 @@ int string2int(int start, int end) {
 // 接收串口数据包，解析成速度
 void SpeedHandler() {
   // HAL_UART_Transmit(&huart1, (uint8_t *)data_buffer, strlen(data_buffer), HAL_MAX_DELAY);
-  int idx0 = 0;
-  while (speed_data_buffer[idx0] != ':') idx0++;
-  int idx1 = idx0 + 1;
-  while (speed_data_buffer[idx1] != ',') idx1++;
-  int idx2 = idx1 + 1;
-  while (speed_data_buffer[idx2] != ',') idx2++;
-  int idx3 = idx2 + 1;
-  while (speed_data_buffer[idx3] != ',') idx3++;
-  int idx4 = idx3 + 1;
-  while (speed_data_buffer[idx4] != ',') idx4++;
-  int idx5 = idx4 + 1;
-  while ((speed_data_buffer[idx5] != '\r')&&(speed_data_buffer[idx5] !='\n')) idx5++;
-
-  motor_speed_y = -string2int(idx0+1, idx1-1) / 1.50;
-  z_target += string2int(idx2+1, idx3-1) / 3000.0;
-  if (z_target > 2.0f * PI) z_target -= 2.0f * PI;
-  if (z_target < 0) z_target += 2.0f * PI;
-
-  PTZ_angle_z += string2int(idx3+1, idx4-1) / 5000.0f;
-  if (PTZ_angle_z > PI) PTZ_angle_z = PI;
-  if (PTZ_angle_z < -PI) PTZ_angle_z = -PI;
-  PTZ_angle_x += string2int(idx4+1, idx5-1) / 5000.0f;
-  if (PTZ_angle_x > PI) PTZ_angle_x = PI;
-  if (PTZ_angle_x < -PI) PTZ_angle_x = -PI;
-  PTZ_set_angle(0x02, PTZ_angle_z);
-  PTZ_set_angle(0x01, PTZ_angle_x);
+  // int idx0 = 0;
+  // while (speed_data_buffer[idx0] != ':') idx0++;
+  // int idx1 = idx0 + 1;
+  // while (speed_data_buffer[idx1] != ',') idx1++;
+  // int idx2 = idx1 + 1;
+  // while (speed_data_buffer[idx2] != ',') idx2++;
+  // int idx3 = idx2 + 1;
+  // while (speed_data_buffer[idx3] != ',') idx3++;
+  // int idx4 = idx3 + 1;
+  // while (speed_data_buffer[idx4] != ',') idx4++;
+  // int idx5 = idx4 + 1;
+  // while ((speed_data_buffer[idx5] != '\r')&&(speed_data_buffer[idx5] !='\n')) idx5++;
+  //
+  // motor_speed_y = -string2int(idx0+1, idx1-1) / 1.50;
+  // z_target += string2int(idx2+1, idx3-1) / 3000.0;
+  // if (z_target > 2.0f * PI) z_target -= 2.0f * PI;
+  // if (z_target < 0) z_target += 2.0f * PI;
+  //
+  // PTZ_angle_z += string2int(idx3+1, idx4-1) / 5000.0f;
+  // if (PTZ_angle_z > PI) PTZ_angle_z = PI;
+  // if (PTZ_angle_z < -PI) PTZ_angle_z = -PI;
+  // PTZ_angle_x += string2int(idx4+1, idx5-1) / 5000.0f;
+  // if (PTZ_angle_x > PI) PTZ_angle_x = PI;
+  // if (PTZ_angle_x < -PI) PTZ_angle_x = -PI;
+  // PTZ_set_angle(0x02, PTZ_angle_z);
+  // PTZ_set_angle(0x01, PTZ_angle_x);
 }
 
 // 接收串口数据包，解析成位置
@@ -628,24 +647,29 @@ void ScreenHandler() {
     int speed = atoi(token[2]);
     float s = speed / 180. * PI;
     if (direction == 0) {
-      PTZ_angle_x += s;
-      PTZ_update(PTZ_angle_x, PTZ_angle_z);
+      // PTZ_angle_x += s;
+      // PTZ_update(PTZ_angle_x, PTZ_angle_z);
+      PTZ_move(s, 0);
     }
     else if (direction == 1) {
-      PTZ_angle_z += s;
-      PTZ_update(PTZ_angle_x, PTZ_angle_z);
+      // PTZ_angle_z += s;
+      // PTZ_update(PTZ_angle_x, PTZ_angle_z);
+      PTZ_move(0, s);
     }
     else if (direction == 2) {
-      PTZ_angle_x -= s;
-      PTZ_update(PTZ_angle_x, PTZ_angle_z);
+      // PTZ_angle_x -= s;
+      // PTZ_update(PTZ_angle_x, PTZ_angle_z);
+      PTZ_move(-s, 0);
     }
     else if (direction == 3) {
-      PTZ_angle_z -= s;
-      PTZ_update(PTZ_angle_x, PTZ_angle_z);
+      // PTZ_angle_z -= s;
+      // PTZ_update(PTZ_angle_x, PTZ_angle_z);
+      PTZ_move(0, -s);
     }else {
       PTZ_angle_x = 0;
       PTZ_angle_z = 0;
       PTZ_update(PTZ_angle_x, PTZ_angle_z);
+      // PTZ_back_zero();
     }
   }
   else if (strcmp(cmd, "cali") == 0) {
@@ -693,39 +717,57 @@ void ScreenHandler() {
   else if (strcmp(cmd, "confirmpic") == 0) {
     int id = atoi(token[1]);
     draw = true;
-    if (id == 0) {
-      draw_size = kk_size;
-      draw_points = kk_points;
-    }
-    else if (id == 1) {
-      draw_size = nl_size;
-      draw_points = nl_points;
-    }
-    else if (id == 2) {
-      draw_size = wsnlwcsnl_size;
-      draw_points = wsnlwcsnl_points;
-    }
-    else if (id == 3) {
-      draw_size = hbkk_size;
-      draw_points = hbkk_points;
-    }
-    else {
-      draw = false;
-      return; // 无效ID
-    }
+    // if (id == 0) {
+    //   draw_size = kk_size;
+    //   draw_points = kk_points;
+    // }
+    // else if (id == 1) {
+    //   draw_size = nl_size;
+    //   draw_points = nl_points;
+    // }
+    // else if (id == 2) {
+    //   draw_size = wsnlwcsnl_size;
+    //   draw_points = wsnlwcsnl_points;
+    // }
+    // else if (id == 3) {
+    //   draw_size = hbkk_size;
+    //   draw_points = hbkk_points;
+    // }
+    // else {
+    //   draw = false;
+    //   return; // 无效ID
+    // }
   }
   else if (strcmp(cmd, "run1") == 0) {
     int round = atoi(token[1]);
     FuckTi_status = 1;
-
+    Fuck_round = round;
+  }
+  else if (strcmp(cmd, "run2") == 0) {
+    Fuck_round = 1;
+    FuckTi_status = 3;
+  }
+  else if (strcmp(cmd, "soft") == 0) {
+    PTZ_soft();
+    FuckTi_status = 0;
+  }
+  else if (strcmp(cmd, "hard") == 0) {
+    FuckTi_status = 2;
+    PTZ_angle_x = 0;
+    PTZ_angle_z = 0;
+    PTZ_update(0,0);
+    MY1_Delay(300);
   }
 }
+
 
 void WriteSCREEN(char* msg) {
   const char end[3] = {0xff, 0xff, 0xff};
   HAL_UART_Transmit(&huart3, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY); // 发送屏幕数据
   HAL_UART_Transmit(&huart3, (uint8_t *)end, sizeof(end), HAL_MAX_DELAY); // 发送结束符
 }
+
+float k230_dx = 0, k230_dy = 0;
 
 void K230Handler() {
   char *token[4];
@@ -746,118 +788,246 @@ void K230Handler() {
     int dz = atoi(token[1]);
     int dx = atoi(token[2]);
     dx = 0;
-    // dz *= -1;
-    // PTZ_angle_z += dz / 10000.0f;
-    // PTZ_angle_x += dx / 10000.0f;
-    // if (PTZ_angle_z > PI) PTZ_angle_z = PI;
-    // if (PTZ_angle_z < -PI) PTZ_angle_z = -PI;
-    // if (PTZ_angle_x > PI) PTZ_angle_x = PI;
-    // if (PTZ_angle_x < -PI) PTZ_angle_x = -PI;
-    // PTZ_update(PTZ_angle_x, PTZ_angle_z);
 
+    if (!(FuckTi_status == 2 || FuckTi_status == 3)) return;
+
+    // if (FuckTi_status == 3) return;
+
+    // PID_output(0, -dz, &PTZ_Z_PID, 1000);
+    // // PTZ_angle_z += dz / 40000.f;
+    // if (fabs(PTZ_Z_PID.output) < 7.)return;
+    // PTZ_angle_z += PTZ_Z_PID.output / 40000.f;
+    // PTZ_update(0, PTZ_angle_z);
+    float a = PTZ_getangle(1);
+    // char msg[10];
+    // sprintf(msg,"%d \r\n",(int)(a*100));
+    // HAL_UART_Transmit(&huart1, msg, strlen(msg), HAL_MAX_DELAY);
+    if (a > 0) {
+      dx = 15;
+    }else {
+      dx = -15;
+    }
     PTZ_move(dx/27000.f, dz/27000.f);
-
+    // if (fabs(a) > 4) {
+    //   PTZ_move(dx/27000.f, dz/27000.f);
+    // }
+    // else {
+    //   PTZ_move_angle(0x02, dz/27000.f);
+    // }
   }
 
 }
 
 
+void MY1_Delay(int ms) {
+  /* 1. 使能 DWT 和 CYCCNT（只需一次） */
+  static uint8_t dwt_ok = 0;
+  if (!dwt_ok) {
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; /* 使能 DWT 模块 */
+    DWT->CYCCNT = 0;                                /* 清计数器 */
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;            /* 启动 CYCCNT */
+    dwt_ok = 1;
+  }
+
+  /* 2. 计算目标 tick（480 MHz -> 480000 ticks/ms） */
+  uint32_t ticks_per_ms = SystemCoreClock / 1000U;    /* = 480000 */
+  uint32_t start = DWT->CYCCNT;
+  uint32_t delay = (uint32_t)ms * ticks_per_ms;
+
+  /* 3. 阻塞等待（可中断） */
+  while ((DWT->CYCCNT - start) < delay) {
+    /* 空循环，编译器不会优化掉 */
+    __NOP();
+  }
+}
+
 int status = 0;
-bool turning = false;
-const int fuck_speed = -300;
-const int fuck_turn = 15;
-void Fuck_NUEDC() {
-  if (status == 0 ) {//上
-    motor_speed_x = 0;
-    motor_speed_y = 0;
-    motor_speed_z = 0;
+bool turning = true;
+// bool turn2 = false;
+const int fuck_speed = -250;
+const int fuck_turn = 7;
+const float bias = 0.2;
+int done_round = 0;
+void run1() {
+  motor_speed_x = 0;
+  motor_speed_y = 0;
+  motor_speed_z = 0;
+  if (!(FuckTi_status == 1 || FuckTi_status == 3)) return;
+  if (Fuck_round <= 0)return;
+  if (status == 0) {//上
     turning = false;
     z_target = 0;
-    if (Position_car.y < -95) {
+    z_target = -(atan2((-Position_car.y)-92 , (-Position_car.x)-0) + PI/2.) + 2.*0.;
+    if (Position_car.y < -90) {
       status++;
       return;
     }
     motor_speed_x = fuck_speed;
   }
   else if (status == 1) {//1转
-    motor_speed_x = 0;
-    motor_speed_y = 0;
-    motor_speed_z = 0;
     turning = true;
-    if (Position_car.z > PI/2. - 0.1) {
+    if (Position_car.z > PI/2. - bias - 0.2) {
       status++;
       return;
     }
     motor_speed_z = fuck_turn;
   }
   else if (status == 2) {//左
-    motor_speed_x = 0;
-    motor_speed_y = 0;
-    motor_speed_z = 0;
     turning = false;
     z_target = PI/2.;
-    if (Position_car.x < -95) {
+    z_target -= atan((Position_car.y - (-92)) / (Position_car.x - (-93)));
+    if (Position_car.x < -93) {
       status++;
       return;
     }
     motor_speed_x = fuck_speed;
   }
   else if (status == 3) {//2转
-    motor_speed_x = 0;
-    motor_speed_y = 0;
-    motor_speed_z = 0;
     turning = true;
-    if ((Position_car.z > -PI && Position_car.z < 0) || Position_car.z > PI - 0.15) {
+    if ((Position_car.z > -PI && Position_car.z < 0) || Position_car.z > PI - bias) {
       status++;
       return;
     }
     motor_speed_z = fuck_turn;
   }
   else if (status == 4) {//下
-    motor_speed_x = 0;
-    motor_speed_y = 0;
-    motor_speed_z = 0;
     turning = false;
     z_target = -PI;
-    if (Position_car.y > -5) {
+    z_target += atan( (Position_car.x - (-95 - done_round * 1.4)) / (Position_car.y - (0)));
+    if (z_target < -PI) z_target += 2*PI;
+    if (Position_car.y > 0) {
       status++;
       return;
     }
     motor_speed_x = fuck_speed;
   }
   else if (status == 5) {//3转
-    motor_speed_x = 0;
-    motor_speed_y = 0;
-    motor_speed_z = 0;
     turning = true;
-    if (Position_car.z > -PI/2. - 0.1 && Position_car.z < 0) {
+    if (Position_car.z > -PI/2. - bias && Position_car.z < 0) {
       status++;
       return;
     }
     motor_speed_z = fuck_turn;
   }
   else if (status == 6) {
-    motor_speed_x = 0;
-    motor_speed_y = 0;
-    motor_speed_z = 0;
     turning = false;
     z_target = -PI/2.;
-    if (Position_car.x > -5) {
+    z_target -= atan((Position_car.y - (1.+done_round*1.7)) / (Position_car.x - (-5)));
+    if (Position_car.x > -6 - done_round * 1.2) {
       status++;
       return;
     }
     motor_speed_x = fuck_speed;
   }
   else if (status == 7) {
-    motor_speed_x = 0;
-    motor_speed_y = 0;
-    motor_speed_z = 0;
     turning = true;
-    if (Position_car.z > -0.1) {
+    if (Position_car.z > -bias) {
       status = 0;
+      Fuck_round--;
+      done_round++;
       return;
     }
     motor_speed_z = fuck_turn;
+  }
+}
+
+void run2() {
+  motor_speed_x = 0;
+  motor_speed_y = 0;
+  motor_speed_z = 0;
+  if (!(FuckTi_status == 1 || FuckTi_status == 3)) return;
+  if (Fuck_round <= 0)return;
+  if (status == 0) {//上
+    turning = false;
+    turn2 = false;
+    z_target = 0;
+    z_target = -(atan2((-Position_car.y)-92 , (-Position_car.x)-0) + PI/2.) + 2.*0.;
+    if (Position_car.y < -90) {
+      status++;
+      return;
+    }
+    motor_speed_x = fuck_speed;
+  }
+  else if (status == 1) {//1转
+    turning = true;
+    turn2 = true;
+    if (Position_car.z < -PI/2. + bias + 0.2) {
+      status++;
+      return;
+    }
+    motor_speed_z = -fuck_turn;
+  }
+  else if (status == 2) {//左
+    turning = false;
+    turn2 = false;
+    z_target = -PI/2.;
+    z_target -= atan((Position_car.y - (-92)) / (Position_car.x - (-93)));
+    if (Position_car.x < -93) {
+      status++;
+      return;
+    }
+    motor_speed_x = -fuck_speed;
+  }
+  else if (status == 3) {//2转
+    turning = true;
+    turn2 = true;
+    if (Position_car.z > 0 - bias - 0.2) {
+      status++;
+      return;
+    }
+    motor_speed_z = fuck_turn;
+  }
+  else if (status == 4) {//下
+    turning = false;
+    turn2 = false;
+    z_target = 0;
+    z_target += atan( (Position_car.x - (-95 - done_round * 1.4)) / (Position_car.y - (0)));
+    if (Position_car.y > 0) {
+      status++;
+      return;
+    }
+    motor_speed_x = -fuck_speed;
+  }
+  else if (status == 5) {//3转
+    turning = true;
+    turn2 = true;
+    if (Position_car.z < -PI/2. + bias) {
+      status++;
+      return;
+    }
+    motor_speed_z = -fuck_turn;
+  }
+  else if (status == 6) {
+    turning = false;
+    turn2 = false;
+    z_target = -PI/2.;
+    z_target -= atan((Position_car.y - (1.+done_round*1.7)) / (Position_car.x - (-5)));
+    if (Position_car.x > -6 - done_round * 1.2) {
+      status++;
+      return;
+    }
+    motor_speed_x = fuck_speed;
+  }
+  else if (status == 7) {
+    turning = true;
+    turn2 = true;
+    if (Position_car.z > -bias) {
+      status = 0;
+      Fuck_round--;
+      done_round++;
+      turn2 = false;
+      return;
+    }
+    motor_speed_z = fuck_turn;
+  }
+}
+
+void Fuck_NUEDC() {
+  if (FuckTi_status == 1) {
+    run1();
+  }
+  else if (FuckTi_status == 3) {
+    run2();
   }
 }
 
@@ -897,7 +1067,25 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       if (motor_speed_z > 30)motor_speed_z = 30;
       if (motor_speed_z < -30)motor_speed_z = -30;
     }
+
+    if (turn2 == true) {
+      float gyro_z = gyro_data.z[0];
+      float dangle_z = gyro_z * 0.01 / 180. * PI * 0.3;
+      // PTZ_move(0, dangle_z);
+      PTZ_move_angle(0x02, dangle_z);
+    }
+
     Move_Transform(motor_speed_x, motor_speed_x, motor_speed_z);
+  }
+  else if (htim->Instance == TIM7) {
+    if (FuckTi_status == 3)return;
+    PTZ_alive = PTZ_heartbeat();
+    char msg[20];
+    if (PTZ_alive == 0)
+      sprintf(msg, "aim.t1.txt=\"dead\"");
+    else
+      sprintf(msg, "aim.t1.txt=\"alive\"");
+    WriteSCREEN(msg);
   }
 }
 
