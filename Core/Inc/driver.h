@@ -10,6 +10,9 @@
 #define MOTOR_C 4
 #define MOTOR_D 3
 
+#include "main.h"
+extern uint8_t m0_dead;
+
 void SetMotor(int motor, int speed);
 
 void SetPolarity(int motor, int polarity);

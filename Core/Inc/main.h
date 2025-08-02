@@ -61,8 +61,6 @@ void Error_Handler(void);
 #define EA1_GPIO_Port GPIOA
 #define EA2_Pin GPIO_PIN_1
 #define EA2_GPIO_Port GPIOA
-#define EC1_Pin GPIO_PIN_6
-#define EC1_GPIO_Port GPIOA
 #define EB2_Pin GPIO_PIN_11
 #define EB2_GPIO_Port GPIOE
 #define PWMA_Pin GPIO_PIN_6
@@ -83,8 +81,6 @@ void Error_Handler(void);
 #define AIN2_GPIO_Port GPIOD
 #define AIN1_Pin GPIO_PIN_6
 #define AIN1_GPIO_Port GPIOD
-#define EC2_Pin GPIO_PIN_5
-#define EC2_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 extern volatile int32_t encoder_count_prev_E2;
@@ -97,6 +93,8 @@ typedef struct speed_data{
   float delta_pulses;
   float delta_distance;
 } Speed_Data;
+
+  extern uint8_t m0_dead;
 extern char imu_rx_buffer[512]__attribute__((section(".out")));
 extern char speed_rx_buffer[512]__attribute__((section(".out")));
 extern char screen_rx_buffer[512]__attribute__((section(".out")));
