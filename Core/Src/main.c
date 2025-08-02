@@ -38,10 +38,12 @@
 #include "driver.h"
 #include "motion/motion_types.h"
 #include "PTZ.h"
-// #include "pic/nl.h"
-// #include "pic/kk.h"
-// #include "pic/wsnlwcsnl.h"
-// #include "pic/hbkk.h"
+#include "pic/nl.h"
+#include "pic/kk.h"
+#include "pic/wsnlwcsnl.h"
+#include "pic/hbkk.h"
+#include "pic/NUEDC.h"
+#include "pic/UESTC.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -146,6 +148,7 @@ extern uint8_t m0_dead = 1;
  */
 int status = 0;
 
+int lazer_close = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -236,6 +239,7 @@ int main(void)
 
   HAL_TIM_Base_Start_IT(&htim6);
   HAL_TIM_Base_Start_IT(&htim7);
+  HAL_TIM_Base_Start_IT(&htim13);
 
   //imu init
   angle_data.dt = 0.01f;
@@ -288,7 +292,12 @@ int main(void)
 
   // PTZ_set_zero();
   // HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET); // 开启激光笔
-  HAL_GPIO_WritePin(GPIOA , GPIO_PIN_5, GPIO_PIN_SET); // 开启激光笔
+  HAL_GPIO_WritePin(GPIOA , GPIO_PIN_5, GPIO_PIN_RESET); // 开启激光笔
+  lazer_close = 999999;
+  // HAL_Delay(100);
+  // lazer_close = 1000;
+  // HAL_Delay(2000);
+  // lazer_close = 1000;
 
   /* USER CODE END 2 */
 
@@ -303,25 +312,27 @@ int main(void)
     //   PTZ_update(PTZ_angle_x, PTZ_angle_z);
     //   HAL_Delay(5);
     // }
-    // if (draw) {
-    //   // PTZ_angle_z = draw_points[cur_i][0] / 180.0f * PI * 7.; // 转换为角度
-    //   // PTZ_angle_x = draw_points[cur_i][1] / 180.0f * PI * 7.; // 转换为角度
-    //   // PTZ_update(PTZ_angle_x, PTZ_angle_z);
-    //   const float ratio = 20.0f;
-    //   float angle_x = draw_points[cur_i][0] / ratio;
-    //   float angle_z = draw_points[cur_i][1] / ratio;
-    //   Projection_Draw(angle_x, angle_z);
-    //
-    //   if (GetDistance(draw_points[(cur_i)%draw_size], draw_points[(cur_i-1)%draw_size]) > 0.15f) {
-    //     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
-    //     HAL_Delay(200);
-    //   } else {
-    //     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-    //   }
-    //
-    //   cur_i++;
-    //   cur_i %= draw_size-1;
-    // }
+    if (draw) {
+      lazer_close = 1;
+      // PTZ_angle_z = draw_points[cur_i][0] / 180.0f * PI * 7.; // 转换为角度
+      // PTZ_angle_x = draw_points[cur_i][1] / 180.0f * PI * 7.; // 转换为角度
+      // PTZ_update(PTZ_angle_x, PTZ_angle_z);
+      const float ratio = 20.0f;
+      float angle_x = draw_points[cur_i][0] / ratio;
+      float angle_z = draw_points[cur_i][1] / ratio;
+      Projection_Draw(angle_x, angle_z);
+
+      if (GetDistance(draw_points[(cur_i)%draw_size], draw_points[(cur_i-1)%draw_size]) > 0.15f) {
+        // HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+        lazer_close = 200;
+        HAL_Delay(200);
+      } else {
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+      }
+
+      cur_i++;
+      cur_i %= draw_size-1;
+    }
     // if (Position_car.z > PI) Position_car.z -= 2*PI;
     // if (Position_car.z < PI/2. && Position_car.z > -PI/2.)
     //   PTZ_update(0, Position_car.z);
@@ -332,7 +343,7 @@ int main(void)
     sprintf(msg, "%d \r\n", m0_dead);
 
     HAL_UART_Transmit(&huart1, msg, strlen(msg), HAL_MAX_DELAY);
-    HAL_Delay(4);
+    HAL_Delay(2);
 
 
     while(detected < 13 && FuckTi_status == 5) {
@@ -705,6 +716,7 @@ void ScreenHandler() {
 
   }
   else if (strcmp(cmd, "cali") == 0) {
+    lazer_close = 1;
     int point = atoi(token[1]);
     // if (point == 0) {
     //   projection_x = -atanf(PTZ_angle_z);
@@ -749,26 +761,34 @@ void ScreenHandler() {
   else if (strcmp(cmd, "confirmpic") == 0) {
     int id = atoi(token[1]);
     draw = true;
-    // if (id == 0) {
-    //   draw_size = kk_size;
-    //   draw_points = kk_points;
-    // }
-    // else if (id == 1) {
-    //   draw_size = nl_size;
-    //   draw_points = nl_points;
-    // }
-    // else if (id == 2) {
-    //   draw_size = wsnlwcsnl_size;
-    //   draw_points = wsnlwcsnl_points;
-    // }
-    // else if (id == 3) {
-    //   draw_size = hbkk_size;
-    //   draw_points = hbkk_points;
-    // }
-    // else {
-    //   draw = false;
-    //   return; // 无效ID
-    // }
+    if (id == 0) {
+      draw_size = kk_size;
+      draw_points = kk_points;
+    }
+    else if (id == 1) {
+      draw_size = nl_size;
+      draw_points = nl_points;
+    }
+    else if (id == 2) {
+      draw_size = wsnlwcsnl_size;
+      draw_points = wsnlwcsnl_points;
+    }
+    else if (id == 3) {
+      draw_size = hbkk_size;
+      draw_points = hbkk_points;
+    }
+    else if (id == 4) {
+      draw_size = NUEDC_size;
+      draw_points = NUEDC_points;
+    }
+    else if (id ==5) {
+      draw_size = UESTC_size;
+      draw_points = UESTC_points;
+    }
+    else {
+      draw = false;
+      return; // 无效ID
+    }
   }
   else if (strcmp(cmd, "run1") == 0) {
     char z_cali[3] = {0xff,0xaa,0x52};
@@ -786,6 +806,7 @@ void ScreenHandler() {
     Fuck_round = round;
   }
   else if (strcmp(cmd, "run2") == 0) {
+    lazer_close = 1000;
     char z_cali[3] = {0xff,0xaa,0x52};
     // z归零
     HAL_UART_Transmit(&huart4, (uint8_t *)z_cali, sizeof(z_cali), HAL_MAX_DELAY);
@@ -802,6 +823,7 @@ void ScreenHandler() {
     PTZ_set_angle(0x01, 0.01);
   }
   else if (strcmp(cmd, "run3") == 0) {
+    lazer_close = 1000;
     char z_cali[3] = {0xff,0xaa,0x52};
     // z归零
     HAL_UART_Transmit(&huart4, (uint8_t *)z_cali, sizeof(z_cali), HAL_MAX_DELAY);
@@ -818,6 +840,7 @@ void ScreenHandler() {
     status = -1;
   }
   else if (strcmp(cmd, "run4") == 0) {
+    lazer_close = 1000;
     char z_cali[3] = {0xff,0xaa,0x52};
     // z归零
     HAL_UART_Transmit(&huart4, (uint8_t *)z_cali, sizeof(z_cali), HAL_MAX_DELAY);
@@ -839,12 +862,14 @@ void ScreenHandler() {
     FuckTi_status = 0;
   }
   else if (strcmp(cmd, "hard") == 0) {
+    lazer_close = 500;
     FuckTi_status = 2;
   }
   else if (strcmp(cmd, "hard2") == 0) {
+    lazer_close = 3000;
     FuckTi_status = 5;//5是自己找
     detected = 0;
-    PTZ_update(0.01, -1);
+    PTZ_update(-0.01, -1);
     HAL_Delay(700);
 
   }
@@ -882,6 +907,8 @@ void K230Handler() {
     detected ++;
 
     if (!(FuckTi_status == 2 || FuckTi_status == 3)) return;
+
+    if (turn2 == true) return;
 
     float a = PTZ_getangle(1);
     char msg[10];
@@ -1123,6 +1150,7 @@ void new_run2() {
       turn_end = false;
       end_turn_offset = 0.0;
       int_z = 0;
+      lazer_close = 300;
       // FuckTi_status = 0;
       return;
     }
@@ -1136,6 +1164,7 @@ void new_run2() {
       status++;
       end_turn_offset = -3.76;
       int_z = -1;
+      lazer_close = 300;
       return;
     }
     // motor_speed_z = -calc_rotation(fabs(PI/2. - Position_car.z));
@@ -1154,6 +1183,7 @@ void new_run2() {
       turn_offset = 0.06;
       turn_end = false;
       int_z = 0;
+      lazer_close = 300;
       return;
     }
     motor_speed_x = calc_speed(abs(Position_car.y) - 0);
@@ -1165,6 +1195,7 @@ void new_run2() {
       status++;
       int_z = 0;
       end_turn_offset = 3.46;
+      lazer_close = 300;
       return;
     }
     // motor_speed_z = fuck_turn;
@@ -1523,6 +1554,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       m0_dead = 0;
     }else {
       m0_dead = 1;
+    }
+  }
+  else if(htim->Instance == TIM13) {
+    lazer_close --;
+    if(lazer_close <= 0) {
+      HAL_GPIO_WritePin(GPIOA , GPIO_PIN_5, GPIO_PIN_SET);
+    }
+    else {
+      HAL_GPIO_WritePin(GPIOA , GPIO_PIN_5, GPIO_PIN_RESET);
     }
   }
 }
